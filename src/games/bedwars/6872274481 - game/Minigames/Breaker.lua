@@ -12,6 +12,12 @@ local Animation
 local SelfBreak
 local InstantBreak
 local LimitItem
+local ClosestBreak
+local AutoTool
+local ToolPriority
+local MaxBlocksPerTick
+local IgnoreProtected
+local SortMode
 local customlist, parts = {}, {}
 
 local function customHealthbar(self, blockRef, health, maxHealth, changeHealth, block)
@@ -116,13 +122,59 @@ end
 
 local hit = 0
 
-local function attemptBreak(tab, localPosition)
-	if not tab then return end
+local function getBestToolForBlock(blockName)
+	local bestTool, bestSpeed = nil, 0
+	for _, tool in store.tools do
+		if tool.tool and bedwars.ItemMeta[tool.tool.Name] then
+			local meta = bedwars.ItemMeta[tool.tool.Name]
+			local breakData = meta.breakBlock or meta.blockBreak
+			if breakData and breakData[blockName] then
+				local speed = breakData[blockName] or breakData.efficiency or 1
+				if speed > bestSpeed then
+					bestSpeed = speed
+					bestTool = tool.tool
+				end
+			end
+		end
+	end
+	return bestTool
+end
+
+local function sortByClosest(tab, localPosition)
+	if not ClosestBreak.Enabled then return tab end
+	local sorted = {}
 	for _, v in tab do
+		if v.Position then
+			table.insert(sorted, v)
+		end
+	end
+	table.sort(sorted, function(a, b)
+		return (a.Position - localPosition).Magnitude < (b.Position - localPosition).Magnitude
+	end)
+	return sorted
+end
+
+local function attemptBreak(tab, localPosition)
+	if not tab or #tab == 0 then return false end
+	
+	local sortedTab = sortByClosest(tab, localPosition)
+	local broken = 0
+	local maxBreak = MaxBlocksPerTick.Value
+
+	for _, v in sortedTab do
+		if broken >= maxBreak then break end
 		if (v.Position - localPosition).Magnitude < Range.Value and bedwars.BlockController:isBlockBreakable({blockPosition = v.Position / 3}, lplr) then
 			if not SelfBreak.Enabled and v:GetAttribute('PlacedByUserId') == lplr.UserId then continue end
 			if (v:GetAttribute('BedShieldEndTime') or 0) > workspace:GetServerTimeNow() then continue end
+			if IgnoreProtected.Enabled and v:GetAttribute('Protected') then continue end
 			if LimitItem.Enabled and not (store.hand.tool and bedwars.ItemMeta[store.hand.tool.Name].breakBlock) then continue end
+
+			if AutoTool.Enabled then
+				local bestTool = getBestToolForBlock(v.Name)
+				if bestTool then
+					switchItem(bestTool, 0)
+				end
+			end
 
 			hit += 1
 			local target, path, endpos = bedwars.breakBlock(v, Effect.Enabled, Animation.Enabled, CustomHealth.Enabled and customHealthbar or nil, InstantBreak.Enabled)
@@ -137,13 +189,16 @@ local function attemptBreak(tab, localPosition)
 				end
 			end
 
+			broken += 1
 			task.wait(InstantBreak.Enabled and (store.damageBlockFail > tick() and 4.5 or 0) or BreakSpeed.Value)
 
-			return true
+			if not ClosestBreak.Enabled then
+				return true
+			end
 		end
 	end
 
-	return false
+	return broken > 0
 end
 
 Breaker = vape.Categories.Minigames:CreateModule({
@@ -182,10 +237,25 @@ Breaker = vape.Categories.Minigames:CreateModule({
 				if entitylib.isAlive then
 					local localPosition = entitylib.character.RootPart.Position
 
-					if attemptBreak(Bed.Enabled and beds, localPosition) then continue end
-					if attemptBreak(customlist, localPosition) then continue end
-					if attemptBreak(LuckyBlock.Enabled and luckyblock, localPosition) then continue end
-					if attemptBreak(IronOre.Enabled and ironores, localPosition) then continue end
+					if ClosestBreak.Enabled then
+						local allBlocks = {}
+						if Bed.Enabled then
+							for _, v in beds do table.insert(allBlocks, v) end
+						end
+						for _, v in customlist do table.insert(allBlocks, v) end
+						if LuckyBlock.Enabled then
+							for _, v in luckyblock do table.insert(allBlocks, v) end
+						end
+						if IronOre.Enabled then
+							for _, v in ironores do table.insert(allBlocks, v) end
+						end
+						attemptBreak(allBlocks, localPosition)
+					else
+						if attemptBreak(Bed.Enabled and beds, localPosition) then continue end
+						if attemptBreak(customlist, localPosition) then continue end
+						if attemptBreak(LuckyBlock.Enabled and luckyblock, localPosition) then continue end
+						if attemptBreak(IronOre.Enabled and ironores, localPosition) then continue end
+					end
 
 					for _, v in parts do
 						v.Position = Vector3.zero
@@ -226,6 +296,13 @@ UpdateRate = Breaker:CreateSlider({
 	Default = 60,
 	Suffix = 'hz'
 })
+MaxBlocksPerTick = Breaker:CreateSlider({
+	Name = 'Max blocks per tick',
+	Min = 1,
+	Max = 10,
+	Default = 1,
+	Tooltip = 'How many blocks to break per cycle (higher = faster but more laggy)'
+})
 Custom = Breaker:CreateTextList({
 	Name = 'Custom',
 	Function = function()
@@ -249,6 +326,21 @@ LuckyBlock = Breaker:CreateToggle({
 IronOre = Breaker:CreateToggle({
 	Name = 'Break Iron Ore',
 	Default = true
+})
+ClosestBreak = Breaker:CreateToggle({
+	Name = 'Closest Break',
+	Default = false,
+	Tooltip = 'Breaks blocks in order of closest to you first'
+})
+AutoTool = Breaker:CreateToggle({
+	Name = 'Auto Tool',
+	Default = false,
+	Tooltip = 'Automatically switches to the best tool for the block type'
+})
+IgnoreProtected = Breaker:CreateToggle({
+	Name = 'Ignore Protected',
+	Default = false,
+	Tooltip = 'Skips blocks that are marked as protected'
 })
 Effect = Breaker:CreateToggle({
 	Name = 'Show Healthbar & Effects',
