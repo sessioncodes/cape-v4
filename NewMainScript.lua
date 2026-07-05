@@ -8,21 +8,21 @@ local delfile = delfile or function(file)
 	writefile(file, '')
 end
 
--- Change this to match your repo's default branch if it's not 'main'
 local BRANCH = 'main'
 
 local function downloadFile(path, func)
 	if not isfile(path) then
 		local commit = isfile('newvape/profiles/commit.txt') and readfile('newvape/profiles/commit.txt') or BRANCH
 		if #commit ~= 40 then commit = BRANCH end
-		-- Strip 'newvape/' prefix for GitHub URL since your repo has files at root
-		local urlPath = select(1, path:gsub('newvape/', ''))
-		local url = 'https://raw.githubusercontent.com/sessioncodes/capevapecompiled/'..commit..'/'..urlPath
+		
+		-- STRIP newvape/ prefix for GitHub URL (your repo has files at root)
+		local githubPath = path:gsub('^newvape/', '')
+		local url = 'https://raw.githubusercontent.com/sessioncodes/capevapecompiled/'..commit..'/'..githubPath
 		local suc, res = pcall(function()
 			return game:HttpGet(url, true)
 		end)
 		if not suc or res == '404: Not Found' then
-			error('Failed to download: '..path..'\nURL: '..url..'\nResponse: '..tostring(res))
+			error('Failed to download: '..path..'\nGitHub URL: '..url..'\nResponse: '..tostring(res))
 		end
 		if path:find('.lua') then
 			res = '--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.\n'..res
@@ -42,6 +42,7 @@ local function wipeFolder(path)
 	end
 end
 
+-- Create local folders in executor
 for _, folder in {'newvape', 'newvape/games', 'newvape/profiles', 'newvape/assets', 'newvape/libraries', 'newvape/guis'} do
 	if not isfolder(folder) then
 		makefolder(folder)
