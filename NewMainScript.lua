@@ -14,7 +14,7 @@ local function downloadFile(path, func)
 			return game:HttpGet('https://raw.githubusercontent.com/sessioncodes/cape-v4/main/'..select(1, path:gsub('capevape/', '')), true)
 		end)
 		if not suc or res == '404: Not Found' then
-			error(res or 'Failed to download file: '..path)
+			error(res or 'Failed to download: '..path)
 		end
 		if path:find('.lua') then
 			res = '--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.\n'..res
@@ -24,10 +24,25 @@ local function downloadFile(path, func)
 	return (func or readfile)(path)
 end
 
+local function wipeFolder(path)
+	if not isfolder(path) then return end
+	for _, file in listfiles(path) do
+		if file:find('loader') then continue end
+		if isfile(file) and select(1, readfile(file):find('--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.')) == 1 then
+			delfile(file)
+		end
+	end
+end
+
 for _, folder in {'capevape', 'capevape/games', 'capevape/profiles', 'capevape/assets', 'capevape/libraries', 'capevape/guis'} do
 	if not isfolder(folder) then
 		makefolder(folder)
 	end
+end
+
+-- Write commit.txt if it doesn't exist (bypass capevapecompiled dependency)
+if not isfile('capevape/profiles/commit.txt') then
+	writefile('capevape/profiles/commit.txt', 'main')
 end
 
 return loadstring(downloadFile('capevape/main.lua'), 'main')()
